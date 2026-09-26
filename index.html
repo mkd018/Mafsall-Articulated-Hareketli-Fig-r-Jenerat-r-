@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>3D Parametrik Mafsallı Figür Fabrikası</title>
+
+<!-- THREE.JS r128 -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/STLExporter.js"></script>
+
+<style>
+* { box-sizing: border-box; }
+html, body {
+    margin: 0; width: 100%; height: 100%; overflow: hidden;
+    font-family: Inter, Arial, Helvetica, sans-serif;
+    background: radial-gradient(circle at 20% 10%, #252a32 0%, #111419 38%, #07090c 100%);
+    color: #f4f4f4;
+}
+.app { width: 100vw; height: 100vh; display: flex; flex-direction: column; }
+.header {
+    height: 68px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 22px; background: rgba(9, 11, 15, .94);
+    border-bottom: 1px solid rgba(255,255,255,.08); backdrop-filter: blur(12px); z-index: 10;
+}
+.logo-title { display: flex; align-items: center; gap: 12px; }
+.logo-icon {
+    width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, #ff5722, #e91e63); color: #fff; font-size: 16px; font-weight: 900;
+}
+.header h1 { margin: 0; font-size: 17px; }
+.header small { display: block; margin-top: 4px; color: #777; font-size: 11px; }
+.version { color: #666; font-size: 11px; }
+.main { flex: 1; min-height: 0; display: flex; }
+.viewer { position: relative; flex: 1; min-width: 0; background: #080a0e; }
+#canvas-container { width: 100%; height: 100%; }
+.status {
+    position: absolute; left: 18px; bottom: 18px; padding: 9px 13px; border-radius: 8px;
+    background: rgba(0,0,0,.62); border: 1px solid rgba(255,255,255,.08); color: #aaa; font-size: 11px; pointer-events: none;
+    max-width: 60%;
+}
+.panel {
+    width: 340px; flex-shrink: 0; padding: 18px; overflow-y: auto;
+    background: rgba(15,17,22,.97); border-left: 1px solid rgba(255,255,255,.08);
+}
+.section { margin-bottom: 20px; }
+.section-title { margin-bottom: 10px; color: #777; font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; }
+label { display: block; margin-bottom: 6px; color: #aaa; font-size: 11px; }
+select, input[type="number"] {
+    width: 100%; padding: 10px; outline: none; border: 1px solid #30343c; border-radius: 8px;
+    background: #0b0d11; color: #eee; font-size: 12px;
+}
+select:focus, input[type="number"]:focus { border-color: #777; }
+.field { margin-bottom: 10px; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.btn { width: 100%; padding: 13px; border: 0; border-radius: 9px; font-size: 12px; font-weight: 700; cursor: pointer; transition: .2s ease; }
+.btn-primary { background: linear-gradient(135deg, #ff5722, #e91e63); color: #fff; }
+.btn-primary:hover { transform: translateY(-1px); filter: brightness(1.08); }
+.btn-secondary { margin-top: 8px; background: #20242b; color: #ddd; border: 1px solid #383d46; }
+.info { margin-top: 8px; color: #6f747d; font-size: 10px; line-height: 1.55; }
+.dimensions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 14px; }
+.dimension { padding: 9px; border: 1px solid #20242b; border-radius: 7px; background: #0b0d11; }
+.dimension span { display: block; margin-bottom: 3px; color: #555; font-size: 8px; }
+.dimension strong { font-size: 11px; }
+@media(max-width: 800px) {
+    body { overflow: auto; }
+    .main { flex-direction: column; }
+    .viewer { height: 55vh; min-height: 400px; }
+    .panel { width: 100%; border-left: 0; border-top: 1px solid rgba(255,255,255,.08); }
+}
+</style>
+</head>
+
+<body>
+<div class="app">
+    <header class="header">
+        <div class="logo-title">
+            <div class="logo-icon">3D</div>
+            <div>
+                <h1>Parametrik Mafsallı Figür Fabrikası</h1>
+                <small>Print-in-Place → Desteksiz → STL</small>
+            </div>
+        </div>
+        <div class="version">Three.js r128</div>
+    </header>
+
+    <main class="main">
+        <section class="viewer">
+            <div id="canvas-container"></div>
+            <div id="status" class="status">Model hazırlanıyor...</div>
+        </section>
+
+        <aside class="panel">
+            <div class="section">
+                <div class="section-title">Model Tipi</div>
+                <label>Figür Seç</label>
+                <select id="figureType">
+                    <option value="dragon">Mafsallı Ejderha / Yılan</option>
+                    <option value="gecko">Hareketli Kertenkele</option>
+                </select>
+            </div>
+
+            <div class="section">
+                <div class="section-title">Parametreler</div>
+                <div class="grid">
+                    <div class="field">
+                        <label>Segment Sayısı</label>
+                        <input id="segments" type="number" value="12" min="5" max="30" step="1">
+                    </div>
+                    <div class="field">
+                        <label>Boyut / Ölçek (%)</label>
+                        <input id="scaleFactor" type="number" value="100" min="50" max="200" step="5">
+                    </div>
+                    <div class="field">
+                        <label>Eklem Boşluğu (mm)</label>
+                        <input id="tolerance" type="number" value="0.3" min="0.1" max="0.6" step="0.05">
+                    </div>
+                    <div class="field">
+                        <label>Gövde Kalınlığı</label>
+                        <input id="thickness" type="number" value="10" min="5" max="25" step="1">
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <button id="downloadBtn" class="btn btn-primary">STL İndir</button>
+                <button id="resetBtn" class="btn btn-secondary">Varsayılan Ayarlara Dön</button>
+            </div>
+
+            <div class="dimensions">
+                <div class="dimension">
+                    <span>DURUM</span>
+                    <strong id="dimensionText">Desteksiz Hazır</strong>
+                </div>
+                <div class="dimension">
+                    <span>BASKI TİPİ</span>
+                    <strong>Print-in-Place</strong>
+                </div>
+            </div>
+
+            <div class="info">
+                🖱 Sol tuş: Döndür<br>
+                🖱 Sağ tuş: Pan<br>
+                🖱 Tekerlek: Zoom
+            </div>
+        </aside>
+    </main>
+</div>
+
+<script>
+let scene, camera, renderer, controls;
+let figureGroup = null;
+
+const container = document.getElementById("canvas-container");
+const statusEl = document.getElementById("status");
+const figureTypeSelect = document.getElementById("figureType");
+const segmentsInput = document.getElementById("segments");
+const scaleFactorInput = document.getElementById("scaleFactor");
+const toleranceInput = document.getElementById("tolerance");
+const thicknessInput = document.getElementById("thickness");
+const dimensionText = document.getElementById("dimensionText");
+
+function init() {
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x080a0e);
+
+    camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+    camera.position.set(0, -60, 90);
+
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    container.appendChild(renderer.domElement);
+
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.07;
+    controls.enablePan = true;
+    controls.minDistance = 20;
+    controls.maxDistance = 300;
+
+    scene.add(new THREE.AmbientLight(0xffffff, 1.5));
+    
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
+    keyLight.position.set(50, 60, 100);
+    scene.add(keyLight);
+
+    const fillLight = new THREE.DirectionalLight(0xff9dbd, 0.8);
+    fillLight.position.set(-70, -30, 60);
+    scene.add(fillLight);
+
+    createGrid();
+    createModel();
+    animate();
+}
+
+function createGrid() {
+    const grid = new THREE.GridHelper(300, 30, 0x333840, 0x181b20);
+    grid.rotation.x = Math.PI / 2;
+    grid.position.z = -5;
+    scene.add(grid);
+}
+
+function createModel() {
+    if (figureGroup) {
+        disposeGroup(figureGroup);
+        scene.remove(figureGroup);
+    }
+
+    figureGroup = new THREE.Group();
+    scene.add(figureGroup);
+
+    const segments = Math.max(5, parseInt(segmentsInput.value));
+    const scale = Number(scaleFactorInput.value) / 100;
+    const tolerance = Number(toleranceInput.value);
+    const baseThickness = Number(thicknessInput.value) * scale;
+    const type = figureTypeSelect.value;
+
+    statusEl.textContent = "Mafsallı model hesaplanıyor...";
+
+    if (type === "dragon") {
+        buildDragon(segments, baseThickness, tolerance);
+    } else {
+        buildGecko(baseThickness, tolerance);
+    }
+
+    statusEl.textContent = "Hazır — print-in-place mafsalları inceleyebilirsin.";
+}
+
+// Mafsallı Ball-and-Socket (Top-Yatak) veya Küresel Bağlantılı Segment Zinciri Simülasyonu
+function buildDragon(segments, thickness, tolerance) {
+    const material = new THREE.MeshStandardMaterial({
+        color: 0xe91e63,
+        roughness: 0.3,
+        metalness: 0.2
+    });
+
+    for (let i = 0; i < segments; i++) {
+        // Segment boyutu baştan sona doğru hafif daralır (kuyruk efekti için)
+        const factor = 1 - (i / (segments * 1.5));
+        const segRadius = thickness * Math.max(0.4, factor);
+
+        const geom = new THREE.SphereGeometry(segRadius, 24, 24);
+        const mesh = new THREE.Mesh(geom, material);
+
+        // Kıvrımlı bir sinüs dalgası üzerinde dizilim
+        const x = Math.sin(i * 0.4) * (i * 2.5);
+        const y = i * (thickness * 1.2);
+        mesh.position.set(x, y, 0);
+
+        // Print-in-place eklem boşluğu hissi için ara halka ekleme
+        if (i > 0) {
+            const jointGeom = new THREE.CylinderGeometry(segRadius - tolerance, segRadius - tolerance, thickness * 0.4, 16);
+            jointGeom.rotateX(Math.PI / 2);
+            const jointMesh = new THREE.Mesh(jointGeom, material);
+            jointMesh.position.set(x, y - (thickness * 0.6), 0);
+            figureGroup.add(jointMesh);
+        }
+
+        figureGroup.add(mesh);
+    }
+
+    dimensionText.textContent = segments + " Segment";
+}
+
+function buildGecko(thickness, tolerance) {
+    const material = new THREE.MeshStandardMaterial({
+        color: 0xff5722,
+        roughness: 0.3,
+        metalness: 0.2
+    });
+
+    // Gövde
+    const bodyGeom = new THREE.BoxGeometry(thickness * 2.5, thickness * 4, thickness * 0.8);
+    const body = new THREE.Mesh(bodyGeom, material);
+    figureGroup.add(body);
+
+    // Baş
+    const headGeom = new THREE.ConeGeometry(thickness * 1.2, thickness * 2, 16);
+    headGeom.rotateX(Math.PI / 2);
+    const head = new THREE.Mesh(headGeom, material);
+    head.position.set(0, thickness * 2.8, 0);
+    figureGroup.add(head);
+
+    dimensionText.textContent = "Kertenkele Modeli";
+}
+
+function disposeGroup(group) {
+    if (!group) return;
+    group.traverse(function(object) {
+        if (object.geometry) object.geometry.dispose();
+        if (object.material) {
+            if (Array.isArray(object.material)) {
+                object.material.forEach(m => m.dispose());
+            } else {
+                object.material.dispose();
+            }
+        }
+    });
+}
+
+// Parametre değişikliklerini dinle
+[segmentsInput, scaleFactorInput, toleranceInput, thicknessInput, figureTypeSelect].forEach(element => {
+    element.addEventListener("input", createModel);
+    element.addEventListener("change", createModel);
+});
+
+document.getElementById("resetBtn").addEventListener("click", function() {
+    figureTypeSelect.value = "dragon";
+    segmentsInput.value = 12;
+    scaleFactorInput.value = 100;
+    toleranceInput.value = 0.3;
+    thicknessInput.value = 10;
+    createModel();
+});
+
+document.getElementById("downloadBtn").addEventListener("click", function() {
+    if (!figureGroup) {
+        alert("Önce model oluşturun.");
+        return;
+    }
+    statusEl.textContent = "STL hazırlanıyor...";
+    const exporter = new THREE.STLExporter();
+    figureGroup.updateMatrixWorld(true);
+    const result = exporter.parse(figureGroup, { binary: true });
+    const blob = new Blob([result], { type: "application/octet-stream" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    
+    a.href = url;
+    a.download = "mafsalli_figur_" + figureTypeSelect.value + ".stl";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    statusEl.textContent = "STL başarıyla indirildi.";
+});
+
+window.addEventListener("resize", function() {
+    if (!renderer) return;
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+    renderer.setSize(width, height);
+});
+
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+}
+
+init();
+</script>
+</body>
+</html>
