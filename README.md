@@ -1,0 +1,1 @@
+# Mafsall-Articulated-Hareketli-Fig-r-Jenerat-r-
